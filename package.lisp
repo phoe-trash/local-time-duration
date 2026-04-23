@@ -1,9 +1,9 @@
 (in-package :cl-user)
 
-;; TODO define-package indent function
 (defpackage #:time-span
   (:use #:common-lisp)
-  (:local-nicknames (#:e #:esrap))
+  (:local-nicknames (#:a #:alexandria)
+                    (#:e #:esrap))
   ;; class-definition.lisp
   (:export
    #:duration
@@ -55,5 +55,6 @@
    #:uninstall-duration-reader)
   ;; timestamp.lisp
   (:export
+   #:timestamp-difference
    #:add-duration
    #:subtract-duration))

@@ -1,4 +1,4 @@
-(in-package :ltd)
+(in-package :time-span)
 
 (defun same-sign-or-zero-p (&rest numbers)
   (declare (dynamic-extent numbers))
@@ -22,169 +22,175 @@
                        (0)
                        (-1))))))))))
 
-(declaim (inline check-sign))
-(defun check-sign (msign nsign)
-  (unless (same-sign-or-zero-p msign nsign)
-    ;; TODO arithmetic-error?
-    (error "~@<Unable to create a year-month timestamp with divergent ~
-               component signs.~:@>")))
+(define-condition invalid-timestamp-element-signs (arithmetic-error) ()
+  (:report (lambda (condition stream)
+             (format stream
+                     "~@<Unable to create a year-month timestamp with divergent ~
+                         component signs for (~A ~{~A~^ ~})~:@>"
+                     (arithmetic-error-operation condition)
+                     (arithmetic-error-operands condition)))))
 
-(defun denormalize (years months weeks days
-                    hours minutes seconds nanoseconds)
+(declaim (inline check-sign))
+(defun check-sign (msign nsign function arguments)
+  (unless (same-sign-or-zero-p msign nsign)
+    (error 'invalid-timestamp-element-signs :operation function :operands arguments)))
+
+(defun denormalize (year month week day hour minute second nanosecond)
   "Converts the provided duration components into total numbers of months and
 nanoseconds."
-  (let* ((total-months (+ months
-                          (* +months-per-year+ years)))
-         ;; We do not support leap seconds of any sort.
-         (total-nanoseconds (+ nanoseconds
-                               (* +nanoseconds-per-second+ seconds)
-                               (* +nanoseconds-per-minute+ minutes)
-                               (* +nanoseconds-per-hour+ hours)
-                               (* +nanoseconds-per-day+ days)
-                               (* +nanoseconds-per-week+ weeks)))
-         (msign (signum total-months))
-         (nsign (signum total-nanoseconds)))
-    (check-sign msign nsign)
-    (values total-months total-nanoseconds)))
+  (let* ((total-month (+ month (* +months-per-year+ year)))
+         ;; We do not support leap seconds of any kind here.
+         (total-nanosecond (+ nanosecond
+                              (* +nanoseconds-per-second+ second)
+                              (* +nanoseconds-per-minute+ minute)
+                              (* +nanoseconds-per-hour+ hour)
+                              (* +nanoseconds-per-day+ day)
+                              (* +nanoseconds-per-week+ week)))
+         (msign (signum total-month))
+         (nsign (signum total-nanosecond)))
+    (check-sign msign nsign 'denormalize (list year month week day hour
+                                               minute second nanosecond))
+    (values total-month total-nanosecond)))
 
-(defun normalize (total-months total-nanoseconds)
+(defun normalize (total-month total-nanosecond)
   "Converts the provided total numbers of months and nanoseconds into
 duration components."
-  (let ((msign (signum total-months))
-        (nsign (signum total-nanoseconds)))
-    (check-sign msign nsign)
-    (multiple-value-bind (years months)
-        (floor total-months +months-per-year+)
-      (multiple-value-bind (weeks remaining-nanoseconds)
-          (floor total-nanoseconds +nanoseconds-per-week+)
-        (multiple-value-bind (days remaining-nanoseconds)
-            (floor remaining-nanoseconds +nanoseconds-per-day+)
-          (multiple-value-bind (hours remaining-nanoseconds)
-              (floor remaining-nanoseconds +nanoseconds-per-hour+)
-            (multiple-value-bind (minutes remaining-nanoseconds)
-                (floor remaining-nanoseconds +nanoseconds-per-minute+)
-              (multiple-value-bind (seconds nanoseconds)
-                  (floor remaining-nanoseconds +nanoseconds-per-second+)
-                ;; Return all values as-is. It's up to the client to make sense
-                ;; of them if years/months and weeks are present together.
-                (values years months weeks days
-                        hours minutes seconds nanoseconds)))))))))
+  (let ((msign (signum total-month))
+        (nsign (signum total-nanosecond)))
+    (check-sign msign nsign 'normalize (list total-month total-nanosecond))
+    (multiple-value-bind (year month)
+        (floor total-month +months-per-year+)
+      (multiple-value-bind (week remaining-nanosecond)
+          (floor total-nanosecond +nanoseconds-per-week+)
+        (multiple-value-bind (day remaining-nanosecond)
+            (floor remaining-nanosecond +nanoseconds-per-day+)
+          (multiple-value-bind (hour remaining-nanosecond)
+              (floor remaining-nanosecond +nanoseconds-per-hour+)
+            (multiple-value-bind (minute remaining-nanosecond)
+                (floor remaining-nanosecond +nanoseconds-per-minute+)
+              (multiple-value-bind (second nanosecond)
+                  (floor remaining-nanosecond +nanoseconds-per-second+)
+                (if (and (= 0 year) (= 0 month))
+                    (values 0 0 week day hour minute second nanosecond)
+                    (values year month 0 (+ (* 7 week) day)
+                            hour minute second nanosecond))))))))))
 
-(defun duration (&key (years 0) (months 0) (weeks 0) (days 0) (hours 0)
-                   (minutes 0) (seconds 0) (nanoseconds 0))
-  "Returns a new duration instance representing the sum of the `DAYS`, `HOURS`,
-`MINUTES`, `SECONDS`, and `NANOSECONDS` arguments and either `WEEKS` or `YEARS`
-and `MONTHS`.
-Durations are normalized, that is, (duration :hours 1) and (duration :minutes
+(defun duration (&key (year 0) (month 0) (week 0) (day 0) (hour 0)
+                   (minute 0) (second 0) (nanosecond 0))
+  "Returns a new duration instance representing the sum of the `DAY`, `HOUR`,
+`MINUTE`, `SECOND`, and `NANOSECOND` arguments and either `WEEK` or `YEAR`
+and `MONTH`.
+Durations are normalized, that is, (duration :hour 1) and (duration :minute
 60) will result in duration instances with the same internal representation.
 Year and month elements are an exception, since they cannot be normalized
 losslessly."
   (flet ((nonzerop (x) (not (zerop x))))
-    (when (and (nonzerop weeks) (or (nonzerop years) (nonzerop months)))
+    (when (and (nonzerop week) (or (nonzerop year) (nonzerop month)))
       (error "~@<Invalid timestamp - weeks are not allowed to be passed ~
                  together with years or months.~:@>")))
-  (multiple-value-bind (total-months total-nanoseconds)
-      (denormalize years months weeks days hours minutes seconds nanoseconds)
-    (multiple-value-bind (years months weeks days
-                          hours minutes seconds nanoseconds)
-        (normalize (abs total-months) (abs total-nanoseconds))
-      (let ((sign (if (zerop (signum total-months))
-                      (signum total-nanoseconds)
-                      (signum total-months))))
+  (multiple-value-bind (total-month total-nanosecond)
+      (denormalize year month week day hour minute second nanosecond)
+    (multiple-value-bind (year month week day hour minute second nanosecond)
+        (normalize (abs total-month) (abs total-nanosecond))
+      (let ((sign (if (zerop (signum total-month))
+                      (signum total-nanosecond)
+                      (signum total-month))))
         ;; Prefer to create week durations, since they're unambiguous.
-        (if (and (zerop months) (zerop years))
-            (make-instance 'week-duration
-                           :weeks weeks
-                           :days days
-                           :hours hours
-                           :minutes minutes
-                           :seconds seconds
-                           :nanoseconds nanoseconds
-                           :sign sign)
-            (make-instance 'year-month-duration
-                           :years years
-                           :months months
-                           :days (+ (* 7 weeks)
-                                    days)
-                           :hours hours
-                           :minutes minutes
-                           :seconds seconds
-                           :nanoseconds nanoseconds
-                           :sign sign))))))
+        (cond ((and (zerop month) (zerop year))
+               (make-instance 'week-duration
+                              :week week
+                              :day day
+                              :hour hour
+                              :minute minute
+                              :second second
+                              :nanosecond nanosecond
+                              :sign sign))
+              ((zerop week)
+               (make-instance 'year-month-duration
+                              :year year
+                              :month month
+                              :day day
+                              :hour hour
+                              :minute minute
+                              :second second
+                              :nanosecond nanosecond
+                              :sign sign))
+              (t (error "Internal error in DURATION.")))))))
 
 (defgeneric decode-duration (duration)
   (:documentation
    "Returns, as multiple values, DURATION's logical components:
 
-(years months weeks days hours minutes seconds nanoseconds)
+(year month week day hour minute seconds nanosecond)
 
-Depending on the duration type, either WEEKS or MONTHS and YEARS
-will be 0.
+Depending on the duration type, either WEEK or MONTH and YEAR will
+be 0.
 
 The sign of the duration is encoded into each component.")
   (:method ((duration year-month-duration))
     (let ((sign (duration-sign duration)))
-      (values (* sign (duration-years duration))
-              (* sign (duration-months duration))
+      (values (* sign (duration-year duration))
+              (* sign (duration-month duration))
               0
-              (* sign (duration-days duration))
-              (* sign (duration-hours duration))
-              (* sign (duration-minutes duration))
-              (* sign (duration-seconds duration))
-              (* sign (duration-nanoseconds duration)))))
+              (* sign (duration-day duration))
+              (* sign (duration-hour duration))
+              (* sign (duration-minute duration))
+              (* sign (duration-second duration))
+              (* sign (duration-nanosecond duration)))))
   (:method ((duration week-duration))
     (let ((sign (duration-sign duration)))
       (values 0
               0
-              (* sign (duration-weeks duration))
-              (* sign (duration-days duration))
-              (* sign (duration-hours duration))
-              (* sign (duration-minutes duration))
-              (* sign (duration-seconds duration))
-              (* sign (duration-nanoseconds duration))))))
+              (* sign (duration-week duration))
+              (* sign (duration-day duration))
+              (* sign (duration-hour duration))
+              (* sign (duration-minute duration))
+              (* sign (duration-second duration))
+              (* sign (duration-nanosecond duration))))))
 
 (deftype duration-as-unit ()
-  '(member :years :months :weeks :days :hours :minutes :seconds :nanoseconds))
+  '(member :year :month :week :day :hour :minute :second :nanosecond))
 
 (defun duration-as (duration unit)
   "Returns two values: the first is the number of whole `UNIT`s within
 `DURATION`, and the second is a fresh duration representing the reamainder of
 the original duration after dividing it by `UNIT`. May return `NIL` as the first
-value if the conversion does not make sense. `UNIT` must be one of :YEARS,
-:MONTHS, :WEEKS, :DAYS, :HOURS, :MINUTES, :SECONDS, and :NANOSECONDS."
+value if the conversion does not make sense. `UNIT` must be one of :YEAR,
+:MONTH, :WEEK, :DAY, :HOUR, :MINUTE, :SECOND, and :NANOSECOND."
   (declare (type duration duration)
            (type duration-as-unit unit))
   ;; We can only represent a year-month duration as years or months.
   (when (and (typep duration 'year-month-duration)
-             (not (member unit '(:years :months))))
+             (not (member unit '(:year :month))))
     (return-from duration-as (values nil duration)))
   ;; We cannot represent a week duration as years or months.
   (when (or (and (typep duration 'week-duration)
-                 (member unit '(:years :months))))
+                 (member unit '(:year :month))))
     (return-from duration-as (values nil duration)))
-  (multiple-value-bind (total-months total-nanoseconds)
-      (apply #'denormalize (decode-duration duration))
+  ;; The representation makes sense; proceed.
+  (multiple-value-bind (total-month total-nanosecond)
+      (apply #'denormalize (multiple-value-list (decode-duration duration)))
     (ecase unit
       ;; Year-month duration.
-      (:years (multiple-value-bind (years months)
-                  (truncate total-months +months-per-year+)
-                (values years (duration :months months
-                                        :nanoseconds total-nanoseconds))))
-      (:months (values total-months (duration :nanoseconds total-nanoseconds)))
+      (:year (multiple-value-bind (year month)
+                 (truncate total-month +months-per-year+)
+               (values year (duration :month month
+                                      :nanosecond total-nanosecond))))
+      (:month (values total-month (duration :nanosecond total-nanosecond)))
       ;; Week duration.
-      (:weeks (multiple-value-bind (weeks nanoseconds)
-                  (truncate total-nanoseconds +nanoseconds-per-week+)
-                (values weeks (duration :nanoseconds nanoseconds))))
-      (:days (multiple-value-bind (days nanoseconds)
-                 (truncate total-nanoseconds +nanoseconds-per-day+)
-               (values days (duration :nanoseconds nanoseconds))))
-      (:hours (multiple-value-bind (hours nanoseconds)
-                  (truncate total-nanoseconds +nanoseconds-per-hour+)
-                (values hours (duration :nanoseconds nanoseconds))))
-      (:minutes (multiple-value-bind (minutes nanoseconds)
-                    (truncate total-nanoseconds +nanoseconds-per-minute+)
-                  (values minutes (duration :nanoseconds nanoseconds))))
-      (:seconds (multiple-value-bind (seconds nanoseconds)
-                    (truncate total-nanoseconds +nanoseconds-per-second+)
-                  (values seconds (duration :nanoseconds nanoseconds))))
-      (:nanoseconds (values total-nanoseconds (duration))))))
+      (:week (multiple-value-bind (week nanosecond)
+                 (truncate total-nanosecond +nanoseconds-per-week+)
+               (values week (duration :nanosecond nanosecond))))
+      (:day (multiple-value-bind (day nanosecond)
+                (truncate total-nanosecond +nanoseconds-per-day+)
+              (values day (duration :nanosecond nanosecond))))
+      (:hour (multiple-value-bind (hour nanosecond)
+                 (truncate total-nanosecond +nanoseconds-per-hour+)
+               (values hour (duration :nanosecond nanosecond))))
+      (:minute (multiple-value-bind (minute nanosecond)
+                   (truncate total-nanosecond +nanoseconds-per-minute+)
+                 (values minute (duration :nanosecond nanosecond))))
+      (:second (multiple-value-bind (second nanosecond)
+                   (truncate total-nanosecond +nanoseconds-per-second+)
+                 (values second (duration :nanosecond nanosecond))))
+      (:nanosecond (values total-nanosecond (duration))))))

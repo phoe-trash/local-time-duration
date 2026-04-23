@@ -4,13 +4,13 @@
   (declare (type year-month-duration a b))
   (flet ((%year-month-duration= (a b)
            ;; Sign is checked in %DURATION-COMPARE.
-           (and (= (duration-years a) (duration-years b))
-                (= (duration-months a) (duration-months b))
-                (= (duration-days a) (duration-days b))
-                (= (duration-hours a) (duration-hours b))
-                (= (duration-minutes a) (duration-minutes b))
-                (= (duration-seconds a) (duration-seconds b))
-                (= (duration-nanoseconds a) (duration-nanoseconds b))
+           (and (= (duration-year a) (duration-year b))
+                (= (duration-month a) (duration-month b))
+                (= (duration-day a) (duration-day b))
+                (= (duration-hour a) (duration-hour b))
+                (= (duration-minute a) (duration-minute b))
+                (= (duration-second a) (duration-second b))
+                (= (duration-nanosecond a) (duration-nanosecond b))
                 '=)))
     (declare (inline %year-month-duration=))
     (cond
@@ -18,21 +18,21 @@
       ;; to compare, as "complete" year-month durations have no linear order.
       ;; Examples: P1Y and P365D, P1Y and P366D.
       ;; Order aside, we can still test for equality though.
-      ((and (or (/= 0 (duration-years a)) (/= 0 (duration-months a)))
-            (or (/= 0 (duration-days a)) (/= 0 (duration-hours a))
-                (/= 0 (duration-minutes a)) (/= 0 (duration-seconds a))
-                (/= 0 (duration-nanoseconds a))))
+      ((and (or (/= 0 (duration-year a)) (/= 0 (duration-month a)))
+            (or (/= 0 (duration-day a)) (/= 0 (duration-hour a))
+                (/= 0 (duration-minute a)) (/= 0 (duration-second a))
+                (/= 0 (duration-nanosecond a))))
        (%year-month-duration= a b))
-      ((and (or (/= 0 (duration-years b)) (/= 0 (duration-months b)))
-            (or (/= 0 (duration-days b)) (/= 0 (duration-hours b))
-                (/= 0 (duration-minutes b)) (/= 0 (duration-seconds b))
-                (/= 0 (duration-nanoseconds b))))
+      ((and (or (/= 0 (duration-year b)) (/= 0 (duration-month b)))
+            (or (/= 0 (duration-day b)) (/= 0 (duration-hour b))
+                (/= 0 (duration-minute b)) (/= 0 (duration-second b))
+                (/= 0 (duration-nanosecond b))))
        (%year-month-duration= a b))
       ;; Only year and month components are filled. We can meaningfully compare.
-      ((< (duration-years a) (duration-years b)) '<)
-      ((> (duration-years a) (duration-years b)) '>)
-      ((< (duration-months a) (duration-months b)) '<)
-      ((> (duration-months a) (duration-months b)) '>)
+      ((< (duration-year a) (duration-year b)) '<)
+      ((> (duration-year a) (duration-year b)) '>)
+      ((< (duration-month a) (duration-month b)) '<)
+      ((> (duration-month a) (duration-month b)) '>)
       ;; Years and months are the same, all other slots are zero.
       ;; Must be equal.
       (t '=))))
@@ -40,18 +40,18 @@
 (defun %week-duration-compare (a b)
   (declare (type week-duration a b))
   (cond
-    ((< (duration-weeks a) (duration-weeks b)) '<)
-    ((> (duration-weeks a) (duration-weeks b)) '>)
-    ((< (duration-days a) (duration-days b)) '<)
-    ((> (duration-days a) (duration-days b)) '>)
-    ((< (duration-hours a) (duration-hours b)) '<)
-    ((> (duration-hours a) (duration-hours b)) '>)
-    ((< (duration-minutes a) (duration-minutes b)) '<)
-    ((> (duration-minutes a) (duration-minutes b)) '>)
-    ((< (duration-seconds a) (duration-seconds b)) '<)
-    ((> (duration-seconds a) (duration-seconds b)) '>)
-    ((< (duration-nanoseconds a) (duration-nanoseconds b)) '<)
-    ((> (duration-nanoseconds a) (duration-nanoseconds b)) '>)
+    ((< (duration-week a) (duration-week b)) '<)
+    ((> (duration-week a) (duration-week b)) '>)
+    ((< (duration-day a) (duration-day b)) '<)
+    ((> (duration-day a) (duration-day b)) '>)
+    ((< (duration-hour a) (duration-hour b)) '<)
+    ((> (duration-hour a) (duration-hour b)) '>)
+    ((< (duration-minute a) (duration-minute b)) '<)
+    ((> (duration-minute a) (duration-minute b)) '>)
+    ((< (duration-second a) (duration-second b)) '<)
+    ((> (duration-second a) (duration-second b)) '>)
+    ((< (duration-nanosecond a) (duration-nanosecond b)) '<)
+    ((> (duration-nanosecond a) (duration-nanosecond b)) '>)
     (t '=)))
 
 (defun %duration-compare (a b)
@@ -60,35 +60,27 @@
   (let ((a-week-p (typep a 'week-duration))
         (b-week-p (typep b 'week-duration)))
     (cond
-      ;; Are they of different signs?
+      ;; If they are of different signs, the comparison is trivial.
       ((< (duration-sign a) (duration-sign b)) '<)
       ((> (duration-sign a) (duration-sign b)) '>)
       ;; If they are of different types, comparison is meaningless.
-      ((alexandria:xor a-week-p b-week-p) nil)
-      ;; Same type. Are they year-month durations?
-      (a-week-p (%year-month-duration-compare a b))
-      ;; Then they must be week durations.
-      (t (%week-duration-compare a b)))))
+      ((a:xor a-week-p b-week-p) nil)
+      ;; If they both are week durations, compare them as such.
+      (a-week-p (%week-duration-compare a b))
+      ;; Then they must be year-month durations, compare them as such.
+      (t (%year-month-duration-compare a b)))))
 
 ;;; FIXME -- this is just copied from local-time and modified to handle different types
 ;;;          with an additional PARSE-BODY
 
 (defmacro %defcomparator (name (type) &body body)
-  (multiple-value-bind (body decls docstring) (alexandria:parse-body body :documentation t)
+  (multiple-value-bind (body decls docstring) (a:parse-body body :documentation t)
     (let ((pair-comparator-name (intern (concatenate 'string "%" (string name)))))
       `(progn
          (declaim (inline ,pair-comparator-name))
          (defun ,pair-comparator-name (a b)
-           (assert (typep a ,type)
-                   nil
-                   'type-error
-                   :datum a
-                   :expected-type ,type)
-           (assert (typep b ,type)
-                   nil
-                   'type-error
-                   :datum b
-                   :expected-type ,type)
+           (assert (typep a ',type) () 'type-error :datum a :expected-type ',type)
+           (assert (typep b ',type) () 'type-error :datum b :expected-type ',type)
            ,@decls
            ,@body)
          (defun ,name (&rest items)
@@ -115,7 +107,7 @@
                          :while b
                          :collect `(,',pair-comparator-name ,a ,b))))))))))
 
-(%defcomparator duration< ('duration)
+(%defcomparator duration< (duration)
   "Returns `(VALUES T T)` if every duration is shorter than the preceding
 duration, else returns `(VALUES NIL T)`. May return `(VALUES NIL NIL)` if the
 comparison is impossible to perform."
@@ -124,7 +116,7 @@ comparison is impossible to perform."
         (values nil nil)
         (values (eql value '<) t))))
 
-(%defcomparator duration<= ('duration)
+(%defcomparator duration<= (duration)
   "Returns `(VALUES T NIL)` if every duration is shorter than or equal to the
 preceding duration, else returns `(VALUES NIL T)`. May return `(VALUES NIL NIL)`
 if the comparison is impossible to perform."
@@ -133,7 +125,7 @@ if the comparison is impossible to perform."
         (values nil nil)
         (values (not (null (member value '(< =)))) t))))
 
-(%defcomparator duration> ('duration)
+(%defcomparator duration> (duration)
   "Returns `(VALUES T NIL)` if every duration is longer than the preceding
 duration, else returns `(VALUES NIL T)`. May return `(VALUES NIL NIL)`
 if the comparison is impossible to perform."
@@ -142,7 +134,7 @@ if the comparison is impossible to perform."
         (values nil nil)
         (values (eql value '>) t))))
 
-(%defcomparator duration>= ('duration)
+(%defcomparator duration>= (duration)
   "Returns `(VALUES T NIL)` if every duration is longer than or equal to the
 preceding duration, else returns `(VALUES NIL T)`. May return `(VALUES NIL NIL)`
 if the comparison is impossible to perform."
@@ -151,7 +143,7 @@ if the comparison is impossible to perform."
         (values nil nil)
         (values (not (null (member value '(> =)))) t))))
 
-(%defcomparator duration= ('duration)
+(%defcomparator duration= (duration)
   "Returns `(VALUES T NIL)` if every duration is equally long, else returns
 `(VALUES NIL T)`. May return `(VALUES NIL NIL)` if the comparison is
 impossible to perform."
@@ -160,7 +152,7 @@ impossible to perform."
         (values nil nil)
         (values (eql value '=) t))))
 
-(%defcomparator duration/= ('duration)
+(%defcomparator duration/= (duration)
   "Returns `(VALUES T NIL)` if every duration is not equally long, else returns
 `(VALUES NIL T)`. May return `(VALUES NIL NIL)` if the comparison is
 impossible to perform."

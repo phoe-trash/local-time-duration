@@ -58,35 +58,35 @@
     (apply #'append (cdr production))))
 
 (defun make-duration-from-time-values (values)
-  (let ((years 0)
-        (months 0)
-        (weeks 0)
-        (days 0)
-        (hours 0)
-        (minutes 0)
-        (seconds 0))
+  (let ((year 0)
+        (month 0)
+        (week 0)
+        (day 0)
+        (hour 0)
+        (minute 0)
+        (second 0))
     (loop for (key value) on values by #'cddr
           do (ecase key
-               (:year (incf years value))
-               (:month (incf months value))
-               (:week (incf weeks value))
-               (:day (incf days value))
-               (:hour (incf hours value))
-               (:minute (incf minutes value))
-               (:second (incf seconds value))))
-    (multiple-value-bind (seconds nanoseconds)
-        (truncate (* seconds +nanoseconds-per-second+)
+               (:year (incf year value))
+               (:month (incf month value))
+               (:week (incf week value))
+               (:day (incf day value))
+               (:hour (incf hour value))
+               (:minute (incf minute value))
+               (:second (incf second value))))
+    (multiple-value-bind (second nanosecond)
+        (truncate (* second +nanoseconds-per-second+)
                   +nanoseconds-per-second+)
-      (duration :years years
-                :months months
-                :weeks weeks
-                :days days
-                :hours hours
-                :minutes minutes
-                :seconds seconds
+      (duration :year year
+                :month month
+                :week week
+                :day day
+                :hour hour
+                :minute minute
+                :second second
                 ;; We may lose precision here.
                 ;; Hopefully no one wants picoseconds.
-                :nanoseconds (truncate nanoseconds)))))
+                :nanosecond (round nanosecond)))))
 
 (e:defrule iso8601-date-T-time
     (and iso8601-duration-date (e:? iso8601-duration-time))
